@@ -24,12 +24,12 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('index.html')
           html = path.read_text(encoding='utf-8')
-          old = '''  <meta property="og:title" content="Atacadão Limpeza e Descartáveis | Valinhos" />
-          <meta property="og:description" content="Tudo para sua casa. Tudo para o seu negócio." />
-          <meta property="og:type" content="website" />'''
+
+          pattern = r'(?m)^\s*<meta property="og:title".*\n\s*<meta property="og:description".*\n\s*<meta property="og:type".*$'
           new = '''  <meta property="og:title" content="Atacadão Valinhos | Limpeza, Descartáveis e Utilidades" />
           <meta property="og:description" content="Soluções para casa, empresas e food service. Duas unidades em Valinhos." />
           <meta property="og:type" content="website" />
@@ -40,9 +40,14 @@ jobs:
           <meta name="twitter:title" content="Atacadão Valinhos | Limpeza, Descartáveis e Utilidades" />
           <meta name="twitter:description" content="Soluções para casa, empresas e food service. Duas unidades em Valinhos." />
           <meta name="twitter:image" content="https://olegariotech-site.github.io/atacadao-valinhos/assets/media/social/og-atacadao-valinhos.png" />'''
-          if old not in html:
-              raise SystemExit('Bloco Open Graph esperado não encontrado em index.html')
-          path.write_text(html.replace(old, new, 1), encoding='utf-8')
+
+          if 'og-atacadao-valinhos.png' in html:
+              print('Open Graph metadata already present.')
+          else:
+              updated, count = re.subn(pattern, new, html, count=1)
+              if count != 1:
+                  raise SystemExit(f'Expected 1 OG block, replaced {count}')
+              path.write_text(updated, encoding='utf-8')
           PY
 
       - name: Commit metadata to V1
