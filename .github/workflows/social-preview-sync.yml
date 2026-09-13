@@ -19,7 +19,29 @@ jobs:
           ref: v1-concept
           fetch-depth: 0
 
-      - name: Inject Open Graph metadata
+      - name: Prepare optimized social image
+        shell: bash
+        run: |
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageOps
+
+          src = Path('assets/media/social/og-atacadao-valinhos.png')
+          out = Path('assets/media/social/og-atacadao-valinhos.jpg')
+          if not src.exists():
+              raise SystemExit(f'Missing source image: {src}')
+
+          with Image.open(src) as im:
+              print('SOURCE', im.format, im.size, im.mode)
+              rgb = im.convert('RGB')
+              fitted = ImageOps.fit(rgb, (1200, 630), method=Image.Resampling.LANCZOS)
+              fitted.save(out, 'JPEG', quality=86, optimize=True, progressive=True)
+
+          print('OUTPUT', out, out.stat().st_size, 'bytes')
+          PY
+
+      - name: Inject robust Open Graph metadata
         shell: bash
         run: |
           python - <<'PY'
@@ -29,37 +51,53 @@ jobs:
           path = Path('index.html')
           html = path.read_text(encoding='utf-8')
 
-          pattern = r'(?m)^\s*<meta property="og:title".*\n\s*<meta property="og:description".*\n\s*<meta property="og:type".*$'
-          new = '''  <meta property="og:title" content="Atacadão Valinhos | Limpeza, Descartáveis e Utilidades" />
+          tags = '''  <meta property="og:title" content="Atacadão Valinhos | Limpeza, Descartáveis e Utilidades" />
           <meta property="og:description" content="Soluções para casa, empresas e food service. Duas unidades em Valinhos." />
           <meta property="og:type" content="website" />
           <meta property="og:url" content="https://olegariotech-site.github.io/atacadao-valinhos/" />
-          <meta property="og:image" content="https://olegariotech-site.github.io/atacadao-valinhos/assets/media/social/og-atacadao-valinhos.png" />
+          <meta property="og:site_name" content="Atacadão Limpeza e Descartáveis" />
+          <meta property="og:image" content="https://olegariotech-site.github.io/atacadao-valinhos/assets/media/social/og-atacadao-valinhos.jpg?v=3" />
+          <meta property="og:image:secure_url" content="https://olegariotech-site.github.io/atacadao-valinhos/assets/media/social/og-atacadao-valinhos.jpg?v=3" />
+          <meta property="og:image:type" content="image/jpeg" />
+          <meta property="og:image:width" content="1200" />
+          <meta property="og:image:height" content="630" />
           <meta property="og:image:alt" content="Atacadão Valinhos — limpeza, descartáveis e utilidades para casa, empresas e food service" />
           <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:title" content="Atacadão Valinhos | Limpeza, Descartáveis e Utilidades" />
           <meta name="twitter:description" content="Soluções para casa, empresas e food service. Duas unidades em Valinhos." />
-          <meta name="twitter:image" content="https://olegariotech-site.github.io/atacadao-valinhos/assets/media/social/og-atacadao-valinhos.png" />'''
+          <meta name="twitter:image" content="https://olegariotech-site.github.io/atacadao-valinhos/assets/media/social/og-atacadao-valinhos.jpg?v=3" />'''
 
-          if 'og-atacadao-valinhos.png' in html:
-              print('Open Graph metadata already present.')
+          start = html.find('<meta property="og:title"')
+          end_marker = '<meta name="twitter:image"'
+          if start == -1:
+              anchor = '  <title>'
+              pos = html.find(anchor)
+              if pos == -1:
+                  raise SystemExit('Could not find <title> anchor')
+              html = html[:pos] + tags + '\n' + html[pos:]
           else:
-              updated, count = re.subn(pattern, new, html, count=1)
-              if count != 1:
-                  raise SystemExit(f'Expected 1 OG block, replaced {count}')
-              path.write_text(updated, encoding='utf-8')
+              end = html.find(end_marker, start)
+              if end == -1:
+                  raise SystemExit('Existing social metadata block is incomplete')
+              end = html.find('/>', end)
+              if end == -1:
+                  raise SystemExit('Could not find end of twitter:image tag')
+              end += 2
+              html = html[:start] + tags + html[end:]
+
+          path.write_text(html, encoding='utf-8')
           PY
 
-      - name: Commit metadata to V1
+      - name: Commit optimized preview and metadata
         shell: bash
         run: |
           git config user.name "Olegario Tech"
           git config user.email "olegariotech.oficial@gmail.com"
-          if git diff --quiet; then
-            echo "No metadata changes required."
+          if git diff --quiet && git ls-files --error-unmatch assets/media/social/og-atacadao-valinhos.jpg >/dev/null 2>&1; then
+            echo "No social preview changes required."
           else
-            git add index.html
-            git commit -m "feat: add WhatsApp social preview metadata [skip ci]"
+            git add index.html assets/media/social/og-atacadao-valinhos.jpg
+            git commit -m "fix: optimize WhatsApp social preview [skip ci]"
             git push origin HEAD:v1-concept
           fi
 
